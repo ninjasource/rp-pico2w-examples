@@ -55,3 +55,17 @@ See `01_logs.rs` for instructions on how the pico bootloader works.
 ```
 cargo run --bin 01_logs --release
 ```
+
+## Programming using probe-rs
+
+Currently, there is no mainline support for programming the RP235x in probe-rs but we can use this fork for now:
+
+```
+cargo install --git https://github.com/konkers/probe-rs --branch wip/2350 probe-rs-tools --locked
+```
+
+## Reading from the serial port to see the logs
+
+```
+sudo screen /dev/ttyACM0 115200
+```
