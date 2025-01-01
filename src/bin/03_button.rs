@@ -17,10 +17,11 @@
 #![no_std]
 #![no_main]
 
-use cyw43_pio::PioSpi;
+use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_executor::Spawner;
 use embassy_rp::{
     bind_interrupts,
+    block::ImageDef,
     gpio::{Input, Level, Output, Pull},
     peripherals::{DMA_CH0, PIO0, USB},
     pio::{self, Pio},
@@ -31,13 +32,17 @@ use log::info;
 use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
+#[link_section = ".start_block"]
+#[used]
+pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
+
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
 #[embassy_executor::task]
-async fn wifi_task(
+async fn cyw43_task(
     runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
 ) -> ! {
     runner.run().await
@@ -52,19 +57,19 @@ async fn logger_task(driver: Driver<'static, USB>) {
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    // setup logging over usb serial port
-    let driver = Driver::new(p.USB, Irqs);
-    spawner.spawn(logger_task(driver)).unwrap();
-
-    // wait for host to connect to usb serial port
-    Timer::after(Duration::from_secs(1)).await;
-    info!("started");
-
     // modem firmware
     let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
 
     // country locale matrix (regulatory config)
     let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
+
+    // setup logging over usb serial port
+    let driver = Driver::new(p.USB, Irqs);
+    spawner.spawn(logger_task(driver)).unwrap();
+
+    // wait for host to connect to usb serial port
+    Timer::after(Duration::from_millis(500)).await;
+    info!("started");
 
     // setup spi bus for wifi modem
     let pwr = Output::new(p.PIN_23, Level::Low);
@@ -73,6 +78,7 @@ async fn main(spawner: Spawner) {
     let spi = PioSpi::new(
         &mut pio.common,
         pio.sm0,
+        RM2_CLOCK_DIVIDER,
         pio.irq0,
         cs,
         p.PIN_24,
@@ -86,7 +92,7 @@ async fn main(spawner: Spawner) {
     let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
 
     // run the wifi runtime on an async task
-    spawner.spawn(wifi_task(runner)).unwrap();
+    spawner.spawn(cyw43_task(runner)).unwrap();
 
     // set the country locale matrix and power management
     // wifi_task MUST be running before this gets called

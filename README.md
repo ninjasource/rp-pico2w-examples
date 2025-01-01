@@ -1,12 +1,15 @@
 # Raspberry Pi Pico2 W examples
 
-This repo was created to demonstrate a simple network interaction between two rp pico2w dev boards with minimal external circuitry required. 
+This repo was created to demonstrate a simple network interaction between two rp pico2w dev boards with minimal external circuitry required. Specifically we don't even need a probe (debugger).
 
 ## Setup
 
-Install / update bootloader tool:
+Install bootloader tool
+See https://github.com/raspberrypi/picotool
+
+Install inotifywait
 ```
-cargo install elf2uf2-rs
+sudo apt install inotify-tools
 ```
 
 Wifi connection settings:
@@ -18,9 +21,9 @@ The files above should contain the `exact` ssid and password to connect to the w
 ## Troubleshooting
 
 Error running:
-`Error: "Unable to find mounted pico"`
+`No accessible RP-series devices in BOOTSEL mode were found.`
 Reason: The pico2 cannot be detected in bootloader mody by the host
-Solution: Unplug the pico, hold down the BOOTSEL button while plugging it back in. On Linux you need to mound the usb drive (e.g. by clicking on RP2350 in your file explorer - you should see two files)
+Solution: Unplug the pico, hold down the BOOTSEL button while plugging it back in. You can then release the button and the device should remain in boot mode.
 
 Compile errors:
 ```
@@ -58,14 +61,15 @@ cargo run --bin 01_logs --release
 
 ## Programming using probe-rs
 
-Currently, there is no mainline support for programming the RP235x in probe-rs but we can use this fork for now:
+Currently, there is no mainline support for programming the RP235x in probe-rs but you can try this fork for now:
 
 ```
 cargo install --git https://github.com/konkers/probe-rs --branch wip/2350 probe-rs-tools --locked
 ```
+Note that this appears to require a probe (debugger) and cannot be used to flash via the USB bootloader
 
 ## Reading from the serial port to see the logs
 
 ```
-sudo screen /dev/ttyACM0 115200
+screen /dev/ttyACM0 115200
 ```

@@ -36,6 +36,9 @@ use embassy_rp::{
 use embassy_time::{Duration, Timer};
 use log::info;
 use static_cell::StaticCell;
+
+// NOTE: panic messages are not sent over usb serial because the pico has to be in a somewhat decent state to send data over USB
+// However, when it panics it stops the scheduler. In order to see panic messages we really need to use a probe
 use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".start_block"]
@@ -74,7 +77,7 @@ async fn main(spawner: Spawner) {
     spawner.spawn(logger_task(driver)).unwrap();
 
     // wait for host to connect to usb serial port
-    Timer::after(Duration::from_secs(1)).await;
+    Timer::after(Duration::from_millis(500)).await;
     info!("started");
 
     // setup spi bus for wifi modem

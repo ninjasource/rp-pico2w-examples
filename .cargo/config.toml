@@ -8,8 +8,9 @@ rustflags = [
     "link-arg=-Tdefmt.x",
 ]
 #runner = "elf2uf2-rs --deploy --serial --verbose"
-runner = "/home/david/source/picotool/build/picotool load -u -v -x -t elf"
+#runner = "~/source/picotool/build/picotool load -u -v -x -t elf"
 #runner = "probe-rs run --chip RP235x"
+runner = "./run.sh"
 
 [build]
 target = "thumbv8m.main-none-eabihf"
