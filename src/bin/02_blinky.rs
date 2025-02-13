@@ -1,9 +1,9 @@
 //! This example tests the RP Pico2 W on board LED and USB serial port logging.
 //!
-//! This example is for a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
+//! NOTE: This targets a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
 //!
 //! How to run with a standard usb cable (no debug probe):
-//! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
+//! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2 or JLINK).
 //! Start with the usb cable unplugged then, while holding down the BOOTSEL button, plug it in. Then you can release the button.
 //! Mount the usb drive (this will be enumerated as USB mass storage) then run the following command:
 //! cargo run --bin 02_blinky --release
@@ -17,7 +17,6 @@
 //! Troubleshoot:
 //! `Error: "Unable to find mounted pico"`
 //! This is because the pico is not in bootloader mode. You need to press down the BOOTSEL button when you plug it in and then release the button.
-//! Then, if your're on linux, you need to mount the drive (click on it in your explorer and it should mount automatically). Or run a command to do it.
 //! You need to do this every time you download firmware onto the device.
 
 #![no_std]
@@ -35,11 +34,8 @@ use embassy_rp::{
 };
 use embassy_time::{Duration, Timer};
 use log::info;
+use panic_halt as _;
 use static_cell::StaticCell;
-
-// NOTE: panic messages are not sent over usb serial because the pico has to be in a somewhat decent state to send data over USB
-// However, when it panics it stops the scheduler. In order to see panic messages we really need to use a probe
-use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".start_block"]
 #[used]

@@ -3,7 +3,7 @@
 //! WIFI_SSID.txt and WIFI_PASSWORD.txt
 //! The files above should contain the exact ssid and password to connect to the wifi network. No newline characters or quotes.
 //!
-//! This example is for a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
+//! NOTE: This targets a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
 //!
 //! How to run with a standard usb cable (no debug probe):
 //! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
@@ -14,11 +14,12 @@
 //! Troubleshoot:
 //! `Error: "Unable to find mounted pico"`
 //! This is because the pico is not in bootloader mode. You need to press down the BOOTSEL button when you plug it in and then release the button.
-//! Then, if your're on linux, you need to mount the drive (click on it in your explorer and it should mount automatically). Or run a command to do it.
 //! You need to do this every time you download firmware onto the device.
 
 #![no_std]
 #![no_main]
+
+use core::str::{from_utf8, FromStr};
 
 use cyw43::JoinOptions;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
@@ -37,10 +38,10 @@ use embassy_rp::{
     usb::{self, Driver},
 };
 use embassy_time::{Duration, Timer};
-use log::info;
+use log::{info, warn};
+use panic_halt as _;
 use rand::RngCore;
 use static_cell::StaticCell;
-use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".start_block"]
 #[used]
@@ -70,9 +71,8 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    const LOCAL_IP: Ipv4Address = Ipv4Address::new(192, 168, 1, 50);
     const LOCAL_PORT: u16 = 47900;
-    const ON: u8 = 1;
+    let local_ip = Ipv4Address::from_str(include_str!("../LOCAL_IP.txt")).ok();
 
     let p = embassy_rp::init(Default::default());
 
@@ -123,12 +123,15 @@ async fn main(spawner: Spawner) {
         .await;
     info!("wifi module setup complete");
 
-    //let config = embassy_net::Config::dhcpv4(Default::default());
-    let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(LOCAL_IP, 24),
-        dns_servers: heapless::Vec::new(),
-        gateway: None,
-    });
+    // OPTIONAL: speed up connecting to the network once you know your ip address (via DHCP) by putting your address in LOCAL_IP.txt
+    let config = match local_ip {
+        Some(address) => embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+            address: embassy_net::Ipv4Cidr::new(address, 24),
+            dns_servers: heapless::Vec::new(),
+            gateway: None,
+        }),
+        None => embassy_net::Config::dhcpv4(Default::default()),
+    };
 
     // Generate random seed
     let seed = rng.next_u64();
@@ -144,12 +147,10 @@ async fn main(spawner: Spawner) {
 
     spawner.spawn(net_task(runner)).unwrap();
 
-    // make sure these files exist in your `src` folder
     let wifi_ssid: &str = include_str!("../WIFI_SSID.txt");
     let wifi_password: &str = include_str!("../WIFI_PASSWORD.txt");
 
     info!("connecting to wifi network '{}'", wifi_ssid);
-
     loop {
         let options = JoinOptions::new(wifi_password.as_bytes());
         match control.join(wifi_ssid, options).await {
@@ -159,13 +160,10 @@ async fn main(spawner: Spawner) {
             }
         }
     }
-    info!("connected to wifi network");
 
-    info!("waiting for DHCP...");
-    while !stack.is_config_up() {
-        Timer::after_millis(100).await;
-    }
-    info!("DHCP is now up!");
+    info!("connected to wifi network, waiting for ip config");
+    stack.wait_config_up().await;
+    info!("config up with {:?}", stack.config_v4());
 
     let mut rx_buffer = [0u8; 4096];
     let mut tx_buffer = [0u8; 4096];
@@ -186,12 +184,16 @@ async fn main(spawner: Spawner) {
     let mut buf: [u8; 1500] = [0; 1500];
     loop {
         let (len, meta) = socket.recv_from(&mut buf).await.unwrap();
-        if len == 1 {
-            let on = buf[0] == ON;
-            info!("received {} from {:?}", on, meta);
-            control.gpio_set(0, on).await;
-        } else {
-            info!("received {} bytes from {:?}", len, meta.endpoint);
+        match from_utf8(&buf[..len]) {
+            Ok(s) => {
+                info!("received '{}' from {:?}", s, meta);
+                match s {
+                    "on" => control.gpio_set(0, true).await,
+                    "off" => control.gpio_set(0, false).await,
+                    _ => warn!("unknown command received"),
+                }
+            }
+            Err(e) => warn!("received {} bytes from {:?}: {:?}", len, meta, e),
         }
     }
 }

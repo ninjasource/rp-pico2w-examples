@@ -73,3 +73,11 @@ Note that this appears to require a probe (debugger) and cannot be used to flash
 ```
 screen /dev/ttyACM0 115200
 ```
+
+## Send test data to the pico2w
+
+In linux (using netcat to fire and forget ipv4 udp packet):
+```
+echo -n "on" | nc -4u -w0 192.168.1.100 47900
+echo -n "off" | nc -4u -w0 192.168.1.100 47900
+```

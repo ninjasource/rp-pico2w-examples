@@ -3,7 +3,7 @@
 //! WIFI_SSID.txt and WIFI_PASSWORD.txt
 //! The files above should contain the exact ssid and password to connect to the wifi network. No newline characters or quotes.
 //!
-//! This example is for a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
+//! NOTE: This targets a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
 //!
 //! How to run with a standard usb cable (no debug probe):
 //! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
@@ -14,11 +14,12 @@
 //! Troubleshoot:
 //! `Error: "Unable to find mounted pico"`
 //! This is because the pico is not in bootloader mode. You need to press down the BOOTSEL button when you plug it in and then release the button.
-//! Then, if your're on linux, you need to mount the drive (click on it in your explorer and it should mount automatically). Or run a command to do it.
 //! You need to do this every time you download firmware onto the device.
 
 #![no_std]
 #![no_main]
+
+use core::str::FromStr;
 
 use cyw43::JoinOptions;
 use cyw43_pio::{PioSpi, DEFAULT_CLOCK_DIVIDER};
@@ -38,9 +39,9 @@ use embassy_rp::{
 };
 use embassy_time::{Duration, Timer};
 use log::info;
+use panic_halt as _;
 use rand::RngCore;
 use static_cell::StaticCell;
-use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".start_block"]
 #[used]
@@ -70,12 +71,11 @@ async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'sta
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
-    const REMOTE_IP: Ipv4Address = Ipv4Address::new(192, 168, 1, 50);
     const REMOTE_PORT: u16 = 47900;
-    const LOCAL_IP: Ipv4Address = Ipv4Address::new(192, 168, 1, 49);
     const LOCAL_PORT: u16 = 47901;
-    const ON: [u8; 1] = [1];
-    const OFF: [u8; 1] = [0];
+    let remote_ip =
+        Ipv4Address::from_str(include_str!("../REMOTE_IP.txt")).expect("invalid remote ip address");
+    let local_ip = Ipv4Address::from_str(include_str!("../LOCAL_IP.txt")).ok();
 
     let p = embassy_rp::init(Default::default());
     let mut rng = RoscRng;
@@ -125,12 +125,15 @@ async fn main(spawner: Spawner) {
         .await;
     info!("wifi module setup complete");
 
-    //let config = embassy_net::Config::dhcpv4(Default::default());
-    let config = embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-        address: embassy_net::Ipv4Cidr::new(LOCAL_IP, 24),
-        dns_servers: heapless::Vec::new(),
-        gateway: None,
-    });
+    // OPTIONAL: speed up connecting to the network once you know your ip address (via DHCP) by putting your address in LOCAL_IP.txt
+    let config = match local_ip {
+        Some(address) => embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+            address: embassy_net::Ipv4Cidr::new(address, 24),
+            dns_servers: heapless::Vec::new(),
+            gateway: None,
+        }),
+        None => embassy_net::Config::dhcpv4(Default::default()),
+    };
 
     // Generate random seed
     let seed = rng.next_u64();
@@ -149,7 +152,6 @@ async fn main(spawner: Spawner) {
     // this is GP15 (not the physical chip pin number!)
     let mut button = Input::new(p.PIN_15, Pull::Up);
 
-    // make sure these files exist in your `src` folder
     let wifi_ssid: &str = include_str!("../WIFI_SSID.txt");
     let wifi_password: &str = include_str!("../WIFI_PASSWORD.txt");
 
@@ -166,11 +168,9 @@ async fn main(spawner: Spawner) {
     }
     info!("connected to wifi network");
 
-    info!("waiting for DHCP...");
-    while !stack.is_config_up() {
-        Timer::after_millis(100).await;
-    }
-    info!("DHCP is now up!");
+    info!("connected to wifi network, waiting for ip config");
+    stack.wait_config_up().await;
+    info!("config up with {:?}", stack.config_v4());
 
     let mut rx_buffer = [0u8; 4096];
     let mut tx_buffer = [0u8; 4096];
@@ -185,7 +185,7 @@ async fn main(spawner: Spawner) {
         &mut tx_buffer,
     );
 
-    let remote_endpoint = IpEndpoint::new(REMOTE_IP.into(), REMOTE_PORT);
+    let remote_endpoint = IpEndpoint::new(remote_ip.into(), REMOTE_PORT);
     socket.bind(LOCAL_PORT).unwrap();
 
     loop {
@@ -193,7 +193,7 @@ async fn main(spawner: Spawner) {
         button.wait_for_low().await;
 
         info!("send led on!");
-        socket.send_to(&ON, remote_endpoint).await.unwrap();
+        socket.send_to(b"on", remote_endpoint).await.unwrap();
         control.gpio_set(0, true).await;
 
         // debounce the button
@@ -203,7 +203,7 @@ async fn main(spawner: Spawner) {
         button.wait_for_high().await;
 
         info!("send led off!");
-        socket.send_to(&OFF, remote_endpoint).await.unwrap();
+        socket.send_to(b"off", remote_endpoint).await.unwrap();
         control.gpio_set(0, false).await;
 
         // debounce the button

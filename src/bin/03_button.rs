@@ -1,6 +1,6 @@
 //! This example tests the RP Pico2 W on board LED which it turns on if pin GP_15 is connected to GND
 //!
-//! This example is for a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
+//! NOTE: This targets a RP Pico2 W or PR Pico2 WH. It does not work with the RP Pico2 board (non-wifi).
 //!
 //! How to run with a standard usb cable (no debug probe):
 //! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
@@ -29,8 +29,8 @@ use embassy_rp::{
 };
 use embassy_time::{Duration, Timer};
 use log::info;
+use panic_halt as _;
 use static_cell::StaticCell;
-use {defmt_rtt as _, panic_probe as _};
 
 #[link_section = ".start_block"]
 #[used]

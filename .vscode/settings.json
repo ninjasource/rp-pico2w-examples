@@ -5,7 +5,7 @@
     "rust-analyzer.check.noDefaultFeatures": true,
     "rust-analyzer.imports.preferNoStd": true,
     "rust-analyzer.cargo.noDefaultFeatures": true,
-    "rust-analyzer.check.targets": "thumbv6m-none-eabi",
+    "rust-analyzer.check.targets": "thumbv8m.main-none-eabihf",
     // don't comment below this line
     "rust-analyzer.check.allTargets": false,
     "rust-analyzer.showUnlinkedFileNotification": false,

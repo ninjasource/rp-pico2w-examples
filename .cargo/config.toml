@@ -1,15 +1,8 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
-rustflags = [
-    "-C",
-    "link-arg=--nmagic",
-    "-C",
-    "link-arg=-Tlink.x",
-    "-C",
-    "link-arg=-Tdefmt.x",
-]
+rustflags = ["-C", "link-arg=--nmagic", "-C", "link-arg=-Tlink.x"]
 #runner = "elf2uf2-rs --deploy --serial --verbose"
-#runner = "~/source/picotool/build/picotool load -u -v -x -t elf"
-#runner = "probe-rs run --chip RP235x"
+#runner = "picotool load -u -v -x -t elf"
+#runner = "probe-rs run --chip RP235x --protocol=jtag"
 runner = "./run.sh"
 
 [build]
