@@ -21,53 +21,26 @@
 
 use core::str::{from_utf8, FromStr};
 
-use cyw43::JoinOptions;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_executor::Spawner;
-use embassy_net::{
-    udp::{PacketMetadata, UdpSocket},
-    Ipv4Address, StackResources,
-};
+use embassy_net::Ipv4Address;
 use embassy_rp::{
     bind_interrupts,
-    block::ImageDef,
-    clocks::RoscRng,
     gpio::{Level, Output},
-    peripherals::{DMA_CH0, PIO0, USB},
+    peripherals::{PIO0, USB},
     pio::{self, Pio},
-    usb::{self, Driver},
+    usb::{self},
 };
 use embassy_time::{Duration, Timer};
 use log::{info, warn};
-use panic_halt as _;
-use rand::RngCore;
-use static_cell::StaticCell;
-
-#[link_section = ".start_block"]
-#[used]
-pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
+use rp_pico2w_examples::{
+    self as _, logging::setup_logging, network::setup_network, radio::setup_radio,
+};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
-
-#[embassy_executor::task]
-async fn cyw43_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
-) -> ! {
-    runner.run().await
-}
-
-#[embassy_executor::task]
-async fn logger_task(driver: Driver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
-}
-
-#[embassy_executor::task]
-async fn net_task(mut runner: embassy_net::Runner<'static, cyw43::NetDriver<'static>>) -> ! {
-    runner.run().await
-}
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
@@ -76,20 +49,12 @@ async fn main(spawner: Spawner) {
 
     let p = embassy_rp::init(Default::default());
 
-    // modem firmware
-    let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-
-    // country locale matrix (regulatory config)
-    let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-
-    let mut rng = RoscRng;
-
     // setup logging over usb serial port
-    let driver = Driver::new(p.USB, Irqs);
-    spawner.spawn(logger_task(driver)).unwrap();
+    let driver = usb::Driver::new(p.USB, Irqs);
+    setup_logging(&spawner, driver);
 
     // wait for host to connect to usb serial port
-    Timer::after(Duration::from_millis(500)).await;
+    Timer::after(Duration::from_millis(1000)).await;
     info!("started");
 
     // setup spi bus for wifi modem
@@ -106,79 +71,9 @@ async fn main(spawner: Spawner) {
         p.PIN_29,
         p.DMA_CH0,
     );
+    let (net_device, mut control) = setup_radio(&spawner, pwr, spi).await;
 
-    // setup network buffers and init the modem
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    let state = STATE.init(cyw43::State::new());
-    let (net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-
-    // run the wifi runtime on an async task
-    spawner.spawn(cyw43_task(runner)).unwrap();
-
-    // set the country locale matrix and power management
-    // wifi_task MUST be running before this gets called
-    control.init(clm).await;
-    control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
-    info!("wifi module setup complete");
-
-    // OPTIONAL: speed up connecting to the network once you know your ip address (via DHCP) by putting your address in LOCAL_IP.txt
-    let config = match local_ip {
-        Some(address) => embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(address, 24),
-            dns_servers: heapless::Vec::new(),
-            gateway: None,
-        }),
-        None => embassy_net::Config::dhcpv4(Default::default()),
-    };
-
-    // Generate random seed
-    let seed = rng.next_u64();
-
-    // Init network stack
-    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
-    let (stack, runner) = embassy_net::new(
-        net_device,
-        config,
-        RESOURCES.init(StackResources::new()),
-        seed,
-    );
-
-    spawner.spawn(net_task(runner)).unwrap();
-
-    let wifi_ssid: &str = include_str!("../WIFI_SSID.txt");
-    let wifi_password: &str = include_str!("../WIFI_PASSWORD.txt");
-
-    info!("connecting to wifi network '{}'", wifi_ssid);
-    loop {
-        let options = JoinOptions::new(wifi_password.as_bytes());
-        match control.join(wifi_ssid, options).await {
-            Ok(_) => break,
-            Err(err) => {
-                info!("join failed with status={}", err.status);
-            }
-        }
-    }
-
-    info!("connected to wifi network, waiting for ip config");
-    stack.wait_config_up().await;
-    info!("config up with {:?}", stack.config_v4());
-
-    let mut rx_buffer = [0u8; 4096];
-    let mut tx_buffer = [0u8; 4096];
-    let mut rx_meta = [PacketMetadata::EMPTY; 16];
-    let mut tx_meta = [PacketMetadata::EMPTY; 16];
-
-    let mut socket = UdpSocket::new(
-        stack,
-        &mut rx_meta,
-        &mut rx_buffer,
-        &mut tx_meta,
-        &mut tx_buffer,
-    );
-
-    socket.bind(LOCAL_PORT).unwrap();
+    let socket = setup_network(&spawner, net_device, &mut control, local_ip, LOCAL_PORT).await;
     info!("waiting for udp packets on port {LOCAL_PORT}");
 
     let mut buf: [u8; 1500] = [0; 1500];

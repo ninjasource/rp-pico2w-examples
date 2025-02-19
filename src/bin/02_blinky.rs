@@ -8,7 +8,7 @@
 //! Mount the usb drive (this will be enumerated as USB mass storage) then run the following command:
 //! cargo run --bin 02_blinky --release
 //!
-//! Why is it so complicated for a blinky? The led is physically connected to the wifi chip which is separate from the rp2040 mcu.
+//! Why is it so complicated for a blinky? The led is physically connected to the wifi chip which is separate from the rp2350 mcu.
 //! Therefore the wifi chip needs to be setup first and that is quite a procedure because we need to load its firmware and set the country locale martix.
 //! We also need to setup the wifi task.
 //! Other things that complicate this board are the fact that if you want to use the bootloader you beed to convert from elf to uf2 format using the elf2uf2-rs tool
@@ -26,54 +26,30 @@ use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_executor::Spawner;
 use embassy_rp::{
     bind_interrupts,
-    block::ImageDef,
     gpio::{Level, Output},
-    peripherals::{DMA_CH0, PIO0, USB},
+    peripherals::{PIO0, USB},
     pio::{self, Pio},
-    usb::{self, Driver},
+    usb::{self},
 };
 use embassy_time::{Duration, Timer};
 use log::info;
-use panic_halt as _;
-use static_cell::StaticCell;
-
-#[link_section = ".start_block"]
-#[used]
-pub static IMAGE_DEF: ImageDef = ImageDef::secure_exe();
+use rp_pico2w_examples::{self as _, logging::setup_logging, radio::setup_radio};
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
     PIO0_IRQ_0 => pio::InterruptHandler<PIO0>;
 });
 
-#[embassy_executor::task]
-async fn cyw43_task(
-    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
-) -> ! {
-    runner.run().await
-}
-
-#[embassy_executor::task]
-async fn logger_task(driver: Driver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
-}
-
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
 
-    // modem firmware
-    let fw = include_bytes!("../../cyw43-firmware/43439A0.bin");
-
-    // country locale matrix (regulatory config)
-    let clm = include_bytes!("../../cyw43-firmware/43439A0_clm.bin");
-
     // setup logging over usb serial port
-    let driver = Driver::new(p.USB, Irqs);
-    spawner.spawn(logger_task(driver)).unwrap();
+    let driver = usb::Driver::new(p.USB, Irqs);
+    setup_logging(&spawner, driver);
 
     // wait for host to connect to usb serial port
-    Timer::after(Duration::from_millis(500)).await;
+    Timer::after(Duration::from_millis(1000)).await;
     info!("started");
 
     // setup spi bus for wifi modem
@@ -90,22 +66,7 @@ async fn main(spawner: Spawner) {
         p.PIN_29,
         p.DMA_CH0,
     );
-
-    // setup network buffers and init the modem
-    static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    let state = STATE.init(cyw43::State::new());
-    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-
-    // run the cyw43 runtime (wifi radio) on an async task
-    spawner.spawn(cyw43_task(runner)).unwrap();
-
-    // set the country locale matrix and power management
-    // cyw43_task MUST be running before this gets called
-    control.init(clm).await;
-    control
-        .set_power_management(cyw43::PowerManagementMode::PowerSave)
-        .await;
-    info!("wifi module setup complete");
+    let (_net_device, mut control) = setup_radio(&spawner, pwr, spi).await;
 
     let delay = Duration::from_secs(1);
     loop {

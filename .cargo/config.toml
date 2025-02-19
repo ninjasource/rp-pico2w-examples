@@ -1,9 +1,10 @@
 [target.'cfg(all(target_arch = "arm", target_os = "none"))']
 rustflags = ["-C", "link-arg=--nmagic", "-C", "link-arg=-Tlink.x"]
-#runner = "elf2uf2-rs --deploy --serial --verbose"
+runner = "elf2uf2-rs --deploy --serial --term --family 0xe48bff59"
 #runner = "picotool load -u -v -x -t elf"
 #runner = "probe-rs run --chip RP235x --protocol=jtag"
-runner = "./run.sh"
+#runner = "./run-picotool.sh"
+#runner = "./run-automount.sh"
 
 [build]
 target = "thumbv8m.main-none-eabihf"
