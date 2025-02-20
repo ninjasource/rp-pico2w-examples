@@ -32,6 +32,15 @@ Reason: The pico2 cannot be detected in bootloader mode by the host.
 
 Solution: Unplug the pico, hold down the BOOTSEL button while plugging it back in. You can then release the button and the device should remain in boot mode. You may need to mount the drive if your machine does not automatically do so already.
 
+Error accessing serial port on linux
+
+Reason: `libudev` needs to be installed (see `serialport` crate for more)
+
+Solution: 
+```bash
+sudo apt install libudev-dev
+```
+
 ## What is the `memory.x` file? 
 
 One of the last steps in compilation is linking which is the process of assigning physical memory addresses to variables and code.
