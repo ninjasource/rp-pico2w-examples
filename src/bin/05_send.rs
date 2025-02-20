@@ -9,7 +9,7 @@
 //! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
 //! Start with the usb cable unplugged then, while holding down the BOOTSEL button, plug it in. Then you can release the button.
 //! Mount the usb drive (this will be enumerated as USB mass storage) then run the following command:
-//! cargo run --bin 05_button_send --release
+//! cargo run --bin 05_send --release
 //!
 //! Troubleshoot:
 //! `Error: "Unable to find mounted pico"`
@@ -21,9 +21,11 @@
 
 use core::str::FromStr;
 
+use cyw43::Control;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_executor::Spawner;
-use embassy_net::{IpEndpoint, Ipv4Address};
+use embassy_futures::select::{select, Either};
+use embassy_net::{udp::UdpSocket, IpEndpoint, Ipv4Address};
 use embassy_rp::{
     bind_interrupts,
     gpio::{Input, Level, Output, Pull},
@@ -32,7 +34,7 @@ use embassy_rp::{
     usb::{self},
 };
 use embassy_time::{Duration, Timer};
-use log::info;
+use log::{error, info, warn};
 use rp_pico2w_examples::{
     self as _, logging::setup_logging, network::setup_network, radio::setup_radio,
 };
@@ -78,30 +80,45 @@ async fn main(spawner: Spawner) {
 
     let socket = setup_network(&spawner, net_device, &mut control, local_ip, LOCAL_PORT).await;
 
-    // this is GP15 (not the physical chip pin number!)
-    let mut button = Input::new(p.PIN_15, Pull::Up);
+    // this is GP14 (not the physical chip pin number!)
+    let mut button = Input::new(p.PIN_14, Pull::Up);
 
     let remote_endpoint = IpEndpoint::new(remote_ip.into(), REMOTE_PORT);
+    let mut on = false;
 
     loop {
-        info!("waiting for button press");
-        button.wait_for_low().await;
-
-        info!("send led on!");
-        socket.send_to(b"on", remote_endpoint).await.unwrap();
-        control.gpio_set(0, true).await;
+        if button.is_low() == on {
+            info!("waiting for button press");
+            button.wait_for_any_edge().await;
+        }
 
         // debounce the button
         Timer::after(Duration::from_millis(100)).await;
 
-        info!("waiting for button release");
-        button.wait_for_high().await;
-
-        info!("send led off!");
-        socket.send_to(b"off", remote_endpoint).await.unwrap();
-        control.gpio_set(0, false).await;
-
-        // debounce the button
-        Timer::after(Duration::from_millis(100)).await;
+        on = button.is_low();
+        send(on, &socket, remote_endpoint, &mut control).await;
     }
+}
+
+async fn send(
+    on: bool,
+    socket: &UdpSocket<'static>,
+    remote_endpoint: IpEndpoint,
+    control: &mut Control<'static>,
+) {
+    info!("send led {}!", if on { "on" } else { "off" });
+    control.gpio_set(0, on).await;
+
+    let send_fut = socket.send_to(if on { b"on" } else { b"off" }, remote_endpoint);
+    let timeout_fut = Timer::after_millis(100);
+
+    match select(send_fut, timeout_fut).await {
+        Either::First(Err(e)) => {
+            error!("socket send error: {:?}", e);
+        }
+        Either::First(Ok(_)) => {
+            // success
+        }
+        Either::Second(_) => warn!("timeout when attempting to send udp packet"),
+    };
 }

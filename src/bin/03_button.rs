@@ -63,8 +63,8 @@ async fn main(spawner: Spawner) {
     );
     let (_net_device, mut control) = setup_radio(&spawner, pwr, spi).await;
 
-    // this is GP15 (not the physical chip pin number!)
-    let mut button = Input::new(p.PIN_15, Pull::Up);
+    // this is GP14 (not the physical chip pin number!)
+    let mut button = Input::new(p.PIN_14, Pull::Up);
 
     loop {
         info!("waiting for button press");

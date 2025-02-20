@@ -9,7 +9,7 @@
 //! The pico has a builtin bootloader that can be used as a replacement for a debug probe (like an ST link v2).
 //! Start with the usb cable unplugged then, while holding down the BOOTSEL button, plug it in. Then you can release the button.
 //! Mount the usb drive (this will be enumerated as USB mass storage) then run the following command:
-//! cargo run --bin 04_button_recv --release
+//! cargo run --bin 04_receive --release
 //!
 //! Troubleshoot:
 //! `Error: "Unable to find mounted pico"`
@@ -32,7 +32,7 @@ use embassy_rp::{
     usb::{self},
 };
 use embassy_time::{Duration, Timer};
-use log::{info, warn};
+use log::{error, info, warn};
 use rp_pico2w_examples::{
     self as _, logging::setup_logging, network::setup_network, radio::setup_radio,
 };
@@ -78,17 +78,19 @@ async fn main(spawner: Spawner) {
 
     let mut buf: [u8; 1500] = [0; 1500];
     loop {
-        let (len, meta) = socket.recv_from(&mut buf).await.unwrap();
-        match from_utf8(&buf[..len]) {
-            Ok(s) => {
-                info!("received '{}' from {:?}", s, meta);
-                match s {
-                    "on" => control.gpio_set(0, true).await,
-                    "off" => control.gpio_set(0, false).await,
-                    _ => warn!("unknown command received"),
+        match socket.recv_from(&mut buf).await {
+            Ok((len, meta)) => match from_utf8(&buf[..len]) {
+                Ok(s) => {
+                    info!("received '{}' from {:?}", s, meta);
+                    match s {
+                        "on" => control.gpio_set(0, true).await,
+                        "off" => control.gpio_set(0, false).await,
+                        _ => warn!("unknown command received"),
+                    }
                 }
-            }
-            Err(e) => warn!("received {} bytes from {:?}: {:?}", len, meta, e),
+                Err(e) => warn!("received {} bytes from {:?}: {:?}", len, meta, e),
+            },
+            Err(e) => error!("error receiving packet: {:?}", e),
         }
     }
 }
