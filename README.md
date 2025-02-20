@@ -41,6 +41,12 @@ Solution:
 sudo apt install libudev-dev
 ```
 
+Reason: your serial port needs root access.
+
+Error: After `Found pico serial on /dev/ttyACM0` message nothing happens and the program eventually terminates.
+
+Solution: look up how to access your serial port without root on your distro
+
 ## What is the `memory.x` file? 
 
 One of the last steps in compilation is linking which is the process of assigning physical memory addresses to variables and code.
