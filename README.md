@@ -72,3 +72,25 @@ In Linux (using netcat to fire and forget ipv4 udp packet):
 echo -n "on" | nc -4u -w0 192.168.1.100 47900
 echo -n "off" | nc -4u -w0 192.168.1.100 47900
 ```
+
+## Ideas to work on when you finish all the examples
+
+Morse code:
+
+Get your pico to flash with morse code when sent text over USB serial.
+
+TCP/IP:
+
+Experiment with opening a TCP/IP connection rather than using UDP.
+
+Internet access:
+
+Instead of connecting to the sandbox wifi, connect to a wifi network that has access to the internet and attempt to make some http calls. 
+The pico2w is an extremely low power device which can be left on all the time. This makes it ideal for checking RSS feeds or, say, looking up Transport-For-London bus times.
+
+See:
+https://tfl.gov.uk/info-for/open-data-users/api-documentation
+
+For example:
+https://api.tfl.gov.uk/StopPoint/490013767D/arrivals
+

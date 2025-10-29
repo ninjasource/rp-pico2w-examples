@@ -76,7 +76,7 @@ async fn main(spawner: Spawner) {
     let socket = setup_network(&spawner, net_device, &mut control, local_ip, LOCAL_PORT).await;
     info!("waiting for udp packets on port {LOCAL_PORT}");
 
-    let mut buf: [u8; 1500] = [0; 1500];
+    let mut buf: [u8; 32] = [0; 32];
     loop {
         match socket.recv_from(&mut buf).await {
             Ok((len, meta)) => match from_utf8(&buf[..len]) {

@@ -24,7 +24,6 @@ use core::str::FromStr;
 use cyw43::Control;
 use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_executor::Spawner;
-use embassy_futures::select::{select, Either};
 use embassy_net::{udp::UdpSocket, IpEndpoint, Ipv4Address};
 use embassy_rp::{
     bind_interrupts,
@@ -34,7 +33,7 @@ use embassy_rp::{
     usb::{self},
 };
 use embassy_time::{Duration, Timer};
-use log::{error, info, warn};
+use log::{error, info};
 use rp_pico2w_examples::{
     self as _, logging::setup_logging, network::setup_network, radio::setup_radio,
 };
@@ -93,7 +92,7 @@ async fn main(spawner: Spawner) {
         }
 
         // debounce the button
-        Timer::after(Duration::from_millis(100)).await;
+        Timer::after(Duration::from_millis(250)).await;
 
         on = button.is_low();
         send(on, &socket, remote_endpoint, &mut control).await;
@@ -106,19 +105,18 @@ async fn send(
     remote_endpoint: IpEndpoint,
     control: &mut Control<'static>,
 ) {
-    info!("send led {}!", if on { "on" } else { "off" });
+    info!(
+        "send led {} to {:?}",
+        if on { "on" } else { "off" },
+        remote_endpoint
+    );
     control.gpio_set(0, on).await;
 
-    let send_fut = socket.send_to(if on { b"on" } else { b"off" }, remote_endpoint);
-    let timeout_fut = Timer::after_millis(100);
-
-    match select(send_fut, timeout_fut).await {
-        Either::First(Err(e)) => {
-            error!("socket send error: {:?}", e);
-        }
-        Either::First(Ok(_)) => {
-            // success
-        }
-        Either::Second(_) => warn!("timeout when attempting to send udp packet"),
-    };
+    match socket
+        .send_to(if on { b"on" } else { b"off" }, remote_endpoint)
+        .await
+    {
+        Ok(_) => info!("send success"),
+        Err(e) => error!("socket send error: {:?}", e),
+    }
 }

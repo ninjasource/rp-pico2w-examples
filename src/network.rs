@@ -6,7 +6,6 @@ use embassy_net::{
 };
 use embassy_rp::clocks::RoscRng;
 use log::info;
-use rand::RngCore;
 use static_cell::StaticCell;
 
 #[embassy_executor::task]
@@ -25,12 +24,18 @@ pub async fn setup_network(
 
     // OPTIONAL: speed up connecting to the network once you know your ip address (via DHCP) by putting your address in LOCAL_IP.txt
     let config = match local_ip {
-        Some(address) => embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
-            address: embassy_net::Ipv4Cidr::new(address, 24),
-            dns_servers: heapless::Vec::new(),
-            gateway: None,
-        }),
-        None => embassy_net::Config::dhcpv4(Default::default()),
+        Some(address) => {
+            info!("using static IP '{:?}'", address);
+            embassy_net::Config::ipv4_static(embassy_net::StaticConfigV4 {
+                address: embassy_net::Ipv4Cidr::new(address, 24),
+                dns_servers: heapless::Vec::new(),
+                gateway: None,
+            })
+        }
+        None => {
+            info!("no static IP specified, using DHCP");
+            embassy_net::Config::dhcpv4(Default::default())
+        }
     };
 
     // Generate random seed
@@ -60,9 +65,12 @@ pub async fn setup_network(
                 info!("connected to wifi network");
                 break;
             }
-            Err(err) => {
-                info!("join failed with status={}, retrying...", err.status);
-            }
+            Err(err) => match err.status {
+                1 => info!("connection attempt failed (generic failure), retrying..."),
+                2 => info!("no matching SSID found (out of range / SSID not in scan), retrying..."),
+                3 => info!("authentication failed (bad password / credentials), retrying..."),
+                _ => info!("unknown status code, retrying..."),
+            },
         }
     }
 

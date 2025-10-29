@@ -74,7 +74,7 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, true).await;
 
         // debounce the button
-        Timer::after(Duration::from_millis(100)).await;
+        Timer::after(Duration::from_millis(250)).await;
 
         info!("waiting for button release");
         button.wait_for_high().await;
@@ -83,6 +83,6 @@ async fn main(spawner: Spawner) {
         control.gpio_set(0, false).await;
 
         // debounce the button
-        Timer::after(Duration::from_millis(100)).await;
+        Timer::after(Duration::from_millis(250)).await;
     }
 }
