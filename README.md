@@ -69,8 +69,8 @@ target = "thumbv8m.main-none-eabihf"
 
 In Linux (using netcat to fire and forget ipv4 udp packet):
 ```bash
-echo -n "on" | nc -4u -w0 192.168.1.100 47900
-echo -n "off" | nc -4u -w0 192.168.1.100 47900
+echo -n "on" | nc -4u -w0 192.168.1.99 47900
+echo -n "off" | nc -4u -w0 192.168.1.99 47900
 ```
 
 ## Ideas to work on when you finish all the examples
